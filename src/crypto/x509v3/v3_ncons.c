@@ -130,6 +130,39 @@ static char *ia5memrchr(ASN1_IA5STRING *str, int c)
     return (char *)&str->data[i - 1];
 }
 
+/*
+ * We cannot use strncasecmp here because that applies locale specific rules. It
+ * also doesn't work with ASN1_STRINGs that may have embedded NUL characters.
+ * For example in Turkish 'I' is not the uppercase character for 'i'. We need to
+ * do a simple ASCII case comparison ignoring the locale (that is why we use
+ * numeric constants below).
+ */
+static int ia5ncasecmp(const char *s1, const char *s2, size_t n)
+{
+    for (; n > 0; n--, s1++, s2++) {
+        if (*s1 != *s2) {
+            unsigned char c1 = (unsigned char)*s1, c2 = (unsigned char)*s2;
+
+            /* Convert to lower case */
+            if (c1 >= 0x41 /* A */ && c1 <= 0x5A /* Z */)
+                c1 += 0x20;
+            if (c2 >= 0x41 /* A */ && c2 <= 0x5A /* Z */)
+                c2 += 0x20;
+
+            if (c1 == c2)
+                continue;
+
+            if (c1 < c2)
+                return -1;
+
+            /* c1 > c2 */
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 static void *v2i_NAME_CONSTRAINTS(const X509V3_EXT_METHOD *method,
 				  X509V3_CTX *ctx, STACK_OF(CONF_VALUE) *nval)
 	{
@@ -435,7 +468,7 @@ static int nc_dns(ASN1_IA5STRING *dns, ASN1_IA5STRING *base)
 			return X509_V_ERR_PERMITTED_VIOLATION;
 		}
 
-	if (OPENSSL_strncasecmp(baseptr, dnsptr, base->length))
+	if (ia5ncasecmp(baseptr, dnsptr, base->length))
 			return X509_V_ERR_PERMITTED_VIOLATION;
 
 	return X509_V_OK;
@@ -458,7 +491,7 @@ static int nc_email(ASN1_IA5STRING *eml, ASN1_IA5STRING *base)
 		if (eml->length > base->length)
 			{
 			emlptr += eml->length - base->length;
-			if (!OPENSSL_strncasecmp(baseptr, emlptr, base->length))
+			if (ia5ncasecmp(baseptr, emlptr, base->length) == 0)
 				return X509_V_OK;
 			}
 		return X509_V_ERR_PERMITTED_VIOLATION;
@@ -483,7 +516,7 @@ static int nc_email(ASN1_IA5STRING *eml, ASN1_IA5STRING *base)
 	basehostlen = IA5_OFFSET_LEN(base, baseptr);
 	emlhostlen = IA5_OFFSET_LEN(eml, emlptr);
 	/* Just have hostname left to match: case insensitive */
-	if (basehostlen != emlhostlen || OPENSSL_strncasecmp(baseptr, emlptr, emlhostlen))
+	if (basehostlen != emlhostlen || ia5ncasecmp(baseptr, emlptr, emlhostlen))
 		return X509_V_ERR_PERMITTED_VIOLATION;
 
 	return X509_V_OK;
@@ -528,13 +561,13 @@ static int nc_uri(ASN1_IA5STRING *uri, ASN1_IA5STRING *base)
 		if (hostlen > base->length)
 			{
 			p = hostptr + hostlen - base->length;
-			if (!OPENSSL_strncasecmp(p, baseptr, base->length))
+			if (ia5ncasecmp(p, baseptr, base->length) == 0)
 				return X509_V_OK;
 			}
 		return X509_V_ERR_PERMITTED_VIOLATION;
 		}
 
-	if ((base->length != (int)hostlen) || OPENSSL_strncasecmp(hostptr, baseptr, hostlen))
+	if ((base->length != (int)hostlen) || ia5ncasecmp(hostptr, baseptr, hostlen))
 		return X509_V_ERR_PERMITTED_VIOLATION;
 
 	return X509_V_OK;
