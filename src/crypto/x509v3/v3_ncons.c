@@ -109,6 +109,27 @@ ASN1_SEQUENCE(NAME_CONSTRAINTS) = {
 IMPLEMENT_ASN1_ALLOC_FUNCTIONS(GENERAL_SUBTREE)
 IMPLEMENT_ASN1_ALLOC_FUNCTIONS(NAME_CONSTRAINTS)
 
+#define IA5_OFFSET_LEN(ia5base, offset) \
+    ((ia5base)->length - ((unsigned char *)(offset) - (ia5base)->data))
+
+/* Like memchr but for ASN1_IA5STRING. Additionally you can specify the
+ * starting point to search from
+ */
+# define ia5memchr(str, start, c) memchr(start, c, IA5_OFFSET_LEN(str, start))
+
+/* Like memrrchr but for ASN1_IA5STRING */
+static char *ia5memrchr(ASN1_IA5STRING *str, int c)
+{
+    int i;
+
+    for (i = str->length; i > 0 && str->data[i - 1] != c; i--);
+
+    if (i == 0)
+        return NULL;
+
+    return (char *)&str->data[i - 1];
+}
+
 static void *v2i_NAME_CONSTRAINTS(const X509V3_EXT_METHOD *method,
 				  X509V3_CTX *ctx, STACK_OF(CONF_VALUE) *nval)
 	{
@@ -397,8 +418,12 @@ static int nc_dns(ASN1_IA5STRING *dns, ASN1_IA5STRING *base)
 	char *baseptr = (char *)base->data;
 	char *dnsptr = (char *)dns->data;
 	/* Empty matches everything */
-	if (!*baseptr)
+	if (base->length == 0)
 		return X509_V_OK;
+
+	if (dns->length < base->length)
+		return X509_V_ERR_PERMITTED_VIOLATION;
+
 	/* Otherwise can add zero or more components on the left so
 	 * compare RHS and if dns is longer and expect '.' as preceding
 	 * character.
@@ -410,7 +435,7 @@ static int nc_dns(ASN1_IA5STRING *dns, ASN1_IA5STRING *base)
 			return X509_V_ERR_PERMITTED_VIOLATION;
 		}
 
-	if (OPENSSL_strcasecmp(baseptr, dnsptr))
+	if (OPENSSL_strncasecmp(baseptr, dnsptr, base->length))
 			return X509_V_ERR_PERMITTED_VIOLATION;
 
 	return X509_V_OK;
@@ -421,18 +446,19 @@ static int nc_email(ASN1_IA5STRING *eml, ASN1_IA5STRING *base)
 	{
 	const char *baseptr = (char *)base->data;
 	const char *emlptr = (char *)eml->data;
+	const char *baseat = ia5memrchr(base, '@');
+	const char *emlat = ia5memrchr(eml, '@');
+	size_t basehostlen, emlhostlen;
 
-	const char *baseat = strchr(baseptr, '@');
-	const char *emlat = strchr(emlptr, '@');
 	if (!emlat)
 		return X509_V_ERR_UNSUPPORTED_NAME_SYNTAX;
 	/* Special case: inital '.' is RHS match */
-	if (!baseat && (*baseptr == '.'))
+	if (!baseat && base->length > 0 && (*baseptr == '.'))
 		{
 		if (eml->length > base->length)
 			{
 			emlptr += eml->length - base->length;
-			if (!OPENSSL_strcasecmp(baseptr, emlptr))
+			if (!OPENSSL_strncasecmp(baseptr, emlptr, base->length))
 				return X509_V_OK;
 			}
 		return X509_V_ERR_PERMITTED_VIOLATION;
@@ -454,8 +480,10 @@ static int nc_email(ASN1_IA5STRING *eml, ASN1_IA5STRING *base)
 		baseptr = baseat + 1;
 		}
 	emlptr = emlat + 1;
+	basehostlen = IA5_OFFSET_LEN(base, baseptr);
+	emlhostlen = IA5_OFFSET_LEN(eml, emlptr);
 	/* Just have hostname left to match: case insensitive */
-	if (OPENSSL_strcasecmp(baseptr, emlptr))
+	if (basehostlen != emlhostlen || OPENSSL_strncasecmp(baseptr, emlptr, emlhostlen))
 		return X509_V_ERR_PERMITTED_VIOLATION;
 
 	return X509_V_OK;
@@ -466,10 +494,14 @@ static int nc_uri(ASN1_IA5STRING *uri, ASN1_IA5STRING *base)
 	{
 	const char *baseptr = (char *)base->data;
 	const char *hostptr = (char *)uri->data;
-	const char *p = strchr(hostptr, ':');
+	const char *p = ia5memchr(uri, (char *)uri->data, ':');
 	int hostlen;
+
 	/* Check for foo:// and skip past it */
-	if (!p || (p[1] != '/') || (p[2] != '/'))
+	if (p == NULL
+	    || IA5_OFFSET_LEN(uri, p) < 3
+	    || p[1] != '/'
+	    || p[2] != '/')
 		return X509_V_ERR_UNSUPPORTED_NAME_SYNTAX;
 	hostptr = p + 3;
 
@@ -477,13 +509,13 @@ static int nc_uri(ASN1_IA5STRING *uri, ASN1_IA5STRING *base)
 
 	/* Look for a port indicator as end of hostname first */
 
-	p = strchr(hostptr, ':');
+	p = ia5memchr(uri, hostptr, ':');
 	/* Otherwise look for trailing slash */
-	if (!p)
-		p = strchr(hostptr, '/');
+	if (p == NULL)
+		p = ia5memchr(uri, hostptr, '/');
 
-	if (!p)
-		hostlen = strlen(hostptr);
+	if (p == NULL)
+		hostlen = IA5_OFFSET_LEN(uri, hostptr);
 	else
 		hostlen = p - hostptr;
 
@@ -491,7 +523,7 @@ static int nc_uri(ASN1_IA5STRING *uri, ASN1_IA5STRING *base)
 		return X509_V_ERR_UNSUPPORTED_NAME_SYNTAX;
 
 	/* Special case: inital '.' is RHS match */
-	if (*baseptr == '.')
+	if (base->length > 0 && *baseptr == '.')
 		{
 		if (hostlen > base->length)
 			{
