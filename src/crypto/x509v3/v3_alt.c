@@ -61,6 +61,7 @@
 #include <openssl/err.h>
 #include <openssl/mem.h>
 #include <openssl/obj.h>
+#include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
 
@@ -130,17 +131,20 @@ STACK_OF(CONF_VALUE) *i2v_GENERAL_NAME(X509V3_EXT_METHOD *method,
 		break;
 
 		case GEN_EMAIL:
-		if (!X509V3_add_value_uchar("email", gen->d.ia5->data, &ret))
+		if (!x509v3_add_len_value_uchar("email", gen->d.ia5->data,
+						 gen->d.ia5->length, &ret))
 		    return NULL;
 		break;
 
 		case GEN_DNS:
-		if (!X509V3_add_value_uchar("DNS", gen->d.ia5->data, &ret))
+		if (!x509v3_add_len_value_uchar("DNS", gen->d.ia5->data,
+						 gen->d.ia5->length, &ret))
 		    return NULL;
 		break;
 
 		case GEN_URI:
-		if (!X509V3_add_value_uchar("URI", gen->d.ia5->data, &ret))
+		if (!x509v3_add_len_value_uchar("URI", gen->d.ia5->data,
+						 gen->d.ia5->length, &ret))
 		    return NULL;
 		break;
 

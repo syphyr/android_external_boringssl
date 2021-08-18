@@ -70,6 +70,7 @@
 #include <openssl/asn1.h>
 #include <openssl/bio.h>
 #include <openssl/cipher.h>
+#include <openssl/conf.h>
 #include <openssl/dh.h>
 #include <openssl/dsa.h>
 #include <openssl/ecdh.h>
@@ -80,6 +81,7 @@
 #include <openssl/sha.h>
 #include <openssl/stack.h>
 #include <openssl/thread.h>
+#include <openssl/x509.h>
 
 #ifdef  __cplusplus
 extern "C" {
@@ -283,6 +285,9 @@ struct x509_cert_pair_st {
 	X509 *forward;
 	X509 *reverse;
 } /* X509_CERT_PAIR */;
+
+int x509v3_add_len_value_uchar(const char *name, const unsigned char *value,
+                               size_t vallen, STACK_OF(CONF_VALUE) **extlist);
 
 /* standard trust ids */
 

@@ -86,13 +86,24 @@ static int ipv6_hex(unsigned char *out, const char *in, int inlen);
 
 /* Add a CONF_VALUE name value pair to stack */
 
-int X509V3_add_value(const char *name, const char *value,
-						STACK_OF(CONF_VALUE) **extlist)
+static int x509v3_add_len_value(const char *name, const char *value,
+				size_t vallen, STACK_OF(CONF_VALUE) **extlist)
 {
 	CONF_VALUE *vtmp = NULL;
 	char *tname = NULL, *tvalue = NULL;
-	if(name && !(tname = BUF_strdup(name))) goto err;
-	if(value && !(tvalue = BUF_strdup(value))) goto err;
+	if (name != NULL && (tname = BUF_strdup(name)) == NULL)
+	    goto err;
+	if (value != NULL && vallen > 0) {
+	/*
+	 * We tolerate a single trailing NUL character, but otherwise no
+	 * embedded NULs
+	 */
+	if (memchr(value, 0, vallen - 1) != NULL)
+	    goto err;
+	tvalue = BUF_strndup(value, vallen);
+	if (tvalue == NULL)
+	    goto err;
+	}
 	if(!(vtmp = CONF_VALUE_new())) goto err;
 	if(!*extlist && !(*extlist = sk_CONF_VALUE_new_null())) goto err;
 	vtmp->section = NULL;
@@ -108,11 +119,27 @@ int X509V3_add_value(const char *name, const char *value,
 	return 0;
 }
 
+int X509V3_add_value(const char *name, const char *value,
+		     STACK_OF(CONF_VALUE) **extlist)
+{
+	return x509v3_add_len_value(name, value,
+				    value != NULL ? strlen((const char *)value) : 0,
+				    extlist);
+}
+
 int X509V3_add_value_uchar(const char *name, const unsigned char *value,
 			   STACK_OF(CONF_VALUE) **extlist)
-    {
-    return X509V3_add_value(name,(const char *)value,extlist);
-    }
+{
+	return x509v3_add_len_value(name, (const char *)value,
+				    value != NULL ? strlen((const char *)value) : 0,
+				    extlist);
+}
+
+int x509v3_add_len_value_uchar(const char *name, const unsigned char *value,
+                               size_t vallen, STACK_OF(CONF_VALUE) **extlist)
+{
+	return x509v3_add_len_value(name, (const char *)value, vallen, extlist);
+}
 
 /* Free function for STACK_OF(CONF_VALUE) */
 
