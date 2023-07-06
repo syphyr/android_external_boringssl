@@ -60,6 +60,7 @@
 
 #include "internal.h"
 
+#define OPENSSL_DH_CHECK_MAX_MODULUS_BITS 32768
 
 int DH_check_pub_key(const DH *dh, const BIGNUM *pub_key, int *ret) {
   int ok = 0;
@@ -102,6 +103,11 @@ int DH_check(const DH *dh, int *ret) {
   BN_CTX *ctx = NULL;
   BN_ULONG l;
   BIGNUM *t1 = NULL, *t2 = NULL;
+
+  /* Don't do any checks at all with an excessively large modulus */
+  if (BN_num_bits(dh->p) > OPENSSL_DH_CHECK_MAX_MODULUS_BITS) {
+    return 0;
+  }
 
   *ret = 0;
   ctx = BN_CTX_new();
