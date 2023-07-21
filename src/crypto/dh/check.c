@@ -99,7 +99,7 @@ int DH_check(const DH *dh, int *ret) {
    *   for 5, p mod 10 == 3 or 7
    * should hold.
    */
-  int ok = 0;
+  int ok = 0, q_good = 0;
   BN_CTX *ctx = NULL;
   BN_ULONG l;
   BIGNUM *t1 = NULL, *t2 = NULL;
@@ -125,7 +125,14 @@ int DH_check(const DH *dh, int *ret) {
     goto err;
   }
 
-  if (dh->q) {
+  if (dh->q != NULL) {
+      if (BN_ucmp(dh->p, dh->q) > 0)
+          q_good = 1;
+      else
+          *ret |= DH_CHECK_INVALID_Q_VALUE;
+  }
+
+  if (q_good) {
     if (BN_cmp(dh->g, BN_value_one()) <= 0) {
       *ret |= DH_CHECK_NOT_SUITABLE_GENERATOR;
     } else if (BN_cmp(dh->g, dh->p) >= 0) {
