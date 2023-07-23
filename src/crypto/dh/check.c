@@ -106,6 +106,7 @@ int DH_check(const DH *dh, int *ret) {
 
   /* Don't do any checks at all with an excessively large modulus */
   if (BN_num_bits(dh->p) > OPENSSL_DH_CHECK_MAX_MODULUS_BITS) {
+    *ret = DH_CHECK_P_NOT_PRIME;
     return 0;
   }
 
